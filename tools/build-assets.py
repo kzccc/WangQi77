@@ -34,6 +34,8 @@ EXTRA = (
     "abcdefghijklmnopqrstuvwxyz"
     " .,:;!?()[]{}<>/\\|-–—_+=*&%$#@~`'\""
     "·、。，；：？！（）【】《》“”‘’…—～×÷°※"
+    # 空格族：页面用 &nbsp; 控制间距，缺了它会回退到系统字体、字宽不一致
+    "\u00a0\u2002\u2003\u2009\u202f\ufeff"
 )
 
 
@@ -55,6 +57,27 @@ def collect_characters():
     return {character for character in characters if character.isprintable() and character.strip() != "" or character == " "}
 
 
+# fontTools 的子集器会丢掉 U+00A0（不换行空格）和 U+3000（全角空格）这类
+# “非标准”空白字符的 cmap 映射。页面用 &nbsp; 控制间距时，缺了映射这些字符
+# 会回退到系统字体、字宽与正文不一致，所以这里把源字体的映射补回来。
+PRESERVE_CODEPOINTS = (0x00A0, 0x3000)
+
+
+def restore_whitespace(font, source_cmap):
+    """Re-add cmap entries the subsetter normalises away."""
+    available = set(font.getGlyphOrder())
+    restored = []
+    for codepoint in PRESERVE_CODEPOINTS:
+        glyph = source_cmap.get(codepoint)
+        if not glyph or glyph not in available:
+            continue
+        for table in font["cmap"].tables:
+            if table.isUnicode() and codepoint not in table.cmap:
+                table.cmap[codepoint] = glyph
+                restored.append(codepoint)
+    return restored
+
+
 def build_fonts(characters):
     text = "".join(sorted(characters))
     print(f"subset covers {len(text)} unique characters")
@@ -71,13 +94,16 @@ def build_fonts(characters):
         options.recalc_bounds = True
 
         font = subset.load_font(source, options)
+        source_cmap = font.getBestCmap()
         subsetter = subset.Subsetter(options=options)
         subsetter.populate(text=text)
         subsetter.subset(font)
+        restored = restore_whitespace(font, source_cmap)
         target = os.path.join(FONT_OUT, output_name)
         subset.save_font(font, target, options)
         font.close()
-        print(f"  {output_name}: {os.path.getsize(target) / 1024:.1f} KB  (from {os.path.getsize(source) / 1024 / 1024:.1f} MB)")
+        note = "，补回空白映射 " + " ".join(f"U+{cp:04X}" for cp in restored) if restored else ""
+        print(f"  {output_name}: {os.path.getsize(target) / 1024:.1f} KB  (from {os.path.getsize(source) / 1024 / 1024:.1f} MB){note}")
 
 
 def build_portrait():

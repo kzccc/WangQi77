@@ -19,7 +19,7 @@
 ## 设计说明
 
 - **风格**：编辑式优雅。象牙纸底 `#fbf9f6`、墨黑正文 `#17161a`、胭脂点缀 `#9e3b4e`，靠留白与 1px 细规则线建立秩序。
-- **字体**：标题与数字用思源宋体（衬线），正文用系统无衬线（PingFang SC / 微软雅黑）。中文字体全量有 11MB，这里按页面实际用到的 959 个字符裁剪成 **272KB / 275KB** 两个 woff2，自托管、不依赖 Google Fonts（境内访问更稳）。
+- **字体**：标题与数字用思源宋体（衬线），正文用系统无衬线（PingFang SC / 微软雅黑）。中文字体全量有 11MB，这里按页面实际用到的 971 个字符裁剪成 **274KB / 278KB** 两个 woff2，自托管、不依赖 Google Fonts（境内访问更稳）。
 - **响应式**：900px 与 640px 两个断点，作品集图片走 `srcset`，移动端只下载 900px 版本。
 - **可访问性**：跳转链接、`aria-current`、灯箱 Esc 关闭与焦点回收、`prefers-reduced-motion` 降级；关闭 JS 后内容与导航依然完整可读。
 
@@ -31,6 +31,12 @@
 pip install pymupdf pillow fonttools brotli
 # 思源宋体 OTF 放在 %TEMP%\hanserif\，或用 SMIND_FONT_SRC 指定目录
 python tools/build-assets.py
+```
+
+改完文案可以用这个脚本确认没有漏字（漏字会让该字回退到系统字体，句中字体会变）：
+
+```bash
+python tools/check-font-coverage.py
 ```
 
 作品集图片由作品集 PDF 渲染而来，如需更新：
