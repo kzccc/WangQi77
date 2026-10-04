@@ -2,12 +2,19 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>作品集 · 王琪 Kay</title>
 <meta name="description" content="王琪（Kay）作品集：KOL / KOC 种草与转化、产品营销、品牌私域社群运营、活动策划与自媒体运营，28 页完整项目复盘。">
 <meta name="author" content="王琪 Kay">
 <meta name="theme-color" content="#fbf9f6">
+<meta name="color-scheme" content="light">
+<meta name="format-detection" content="telephone=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="王琪 Kay">
+<meta name="mobile-web-app-capable" content="yes">
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/favicon.svg">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -330,9 +337,14 @@
 </footer>
 
 <div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-label="作品集大图预览">
+  <div class="lightbox-stage" id="lightboxStage">
+    <img id="lightboxImg" alt="" draggable="false">
+  </div>
+  <button class="lightbox-nav lightbox-prev" id="lightboxPrev" type="button" aria-label="上一页">‹</button>
+  <button class="lightbox-nav lightbox-next" id="lightboxNext" type="button" aria-label="下一页">›</button>
   <button class="lightbox-close" type="button" aria-label="关闭预览">×</button>
-  <img id="lightboxImg" alt="">
   <p class="lightbox-count" id="lightboxCount"></p>
+  <p class="lightbox-hint" id="lightboxHint">双指缩放看细节 · 左右滑动翻页 · 下滑关闭</p>
 </div>
 
 <script src="js/main.js"></script>
