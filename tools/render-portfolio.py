@@ -5,20 +5,34 @@ Put the source PDF (77个人作品集*.pdf) back into the project root, then run
     pip install pymupdf pillow
     python tools/render-portfolio.py
 
-Output: assets/portfolio/NN-w.webp (1600px) and NN-s.webp (900px)
+Output per page:
+    NN-s.webp   900px  手机端页内滚动（srcset 选它）
+    NN-w.webp  2160px  桌面端页内滚动（匹配 1080 CSS px @2x）
+    NN-xl.webp 3840px  灯箱专用：视网膜桌面 1:1，并留出放大余量
+
+分辨率是清晰度的硬上限：1600px 在 2x 屏桌面上连 1:1 都达不到，放大后必然发虚。
+PDF 里的文字与形状是真矢量，提高渲染 DPI 能实打实增加细节，不是拉伸。
 """
 
 import glob
 import os
+import sys
 
 import pymupdf
 from PIL import Image
 
+# 素材文件名里带 emoji，Windows 控制台默认 GBK 会直接抛异常
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(BASE, "assets", "portfolio")
 
-# Two responsive widths; phones pick the small one through srcset.
-VARIANTS = (("w", 1600, 80), ("s", 900, 78))
+# 三档尺寸：页内两档走 srcset，xl 档只给灯箱用（不进 srcset，否则滚动时会大量下载）
+VARIANTS = (
+    ("s", 900, 78),
+    ("w", 2160, 85),
+    ("xl", 3840, 88),
+)
 
 
 def find_source():

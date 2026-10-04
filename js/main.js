@@ -150,15 +150,21 @@
     var closeButton = lightbox.querySelector(".lightbox-close");
     var triggers = Array.prototype.slice.call(document.querySelectorAll(".pf-slide-btn"));
 
-    var MAX_SCALE = 6;
+    // 3200px 源在 2x 屏桌面放到 6x 已是纯拉伸（密度 < 0.3），收到 4x 更实在
+    var MAX_SCALE = 4;
     var DOUBLE_TAP_MS = 320;
     var slides = triggers.map(function (trigger) {
       var source = trigger.querySelector("img");
+      var src = trigger.getAttribute("data-slide") || "";
       return {
-        src: trigger.getAttribute("data-slide"),
+        src: src,
+        // 灯箱专用高清档。页内两档（900 / 2160px）在 2x 屏放大后像素不够，
+        // 3200px 的 xl 档才能撑住视网膜屏 1:1 以及放大细看。
+        xl: trigger.getAttribute("data-slide-xl") || src.replace(/-w\.webp$/, "-xl.webp"),
         alt: source ? source.alt : "作品集大图",
       };
     });
+    var sharpToken = 0;
 
     var view = { scale: 1, tx: 0, ty: 0 };
     var base = { width: 1, height: 1 };
@@ -235,9 +241,27 @@
       [-1, 1].forEach(function (offset) {
         var neighbour = slides[(current + offset + slides.length) % slides.length];
         if (!neighbour || !neighbour.src) return;
+        // 只保底预取中等档（通常已在页内缓存）。高清档按需加载：
+        // 预取它会让每次滑动都悄悄多下 400KB，移动流量代价太大。
         var warm = new Image();
+        warm.decoding = "async";
         warm.src = neighbour.src;
       });
+    }
+
+    // 先显示页内已缓存的中等尺寸（秒开），高清档解码完成后再顶上，
+    // 这样既不用等大图，放大细看时又足够清晰。
+    function upgradeToSharp(slide) {
+      if (!slide.xl || slide.xl === slide.src) return;
+      var token = (sharpToken += 1);
+      var sharp = new Image();
+      sharp.decoding = "async";
+      sharp.onload = function () {
+        if (token !== sharpToken) return;
+        if (!lightbox.classList.contains("is-open")) return;
+        image.src = slide.xl;
+      };
+      sharp.src = slide.xl;
     }
 
     function show(index) {
@@ -248,6 +272,7 @@
       image.alt = slide.alt;
       counter.textContent = current + 1 + " / " + slides.length;
       resetView();
+      upgradeToSharp(slide);
       preloadNeighbours();
     }
 
