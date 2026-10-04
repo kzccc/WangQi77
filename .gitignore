@@ -1,0 +1,19 @@
+# 原始素材：简历与作品集 PDF 不进入公开仓库
+# 1) 作品集 PDF 有 38MB，会让仓库体积失控
+# 2) 网站已经用渲染后的图片在页面内展示作品集，不需要额外提供源文件下载
+*.pdf
+*.zip
+
+# 构建脚本的中间产物
+assets/candidate-*
+__pycache__/
+*.pyc
+.venv/
+
+# 系统与编辑器
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.log
