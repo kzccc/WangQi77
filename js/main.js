@@ -152,7 +152,7 @@
 
     // 3200px 源在 2x 屏桌面放到 6x 已是纯拉伸（密度 < 0.3），收到 4x 更实在
     var MAX_SCALE = 4;
-    var DOUBLE_TAP_MS = 320;
+    var DOUBLE_TAP_MS = 350;
     var slides = triggers.map(function (trigger) {
       var source = trigger.querySelector("img");
       var src = trigger.getAttribute("data-slide") || "";
@@ -167,7 +167,6 @@
     var sharpToken = 0;
 
     var view = { scale: 1, tx: 0, ty: 0 };
-    var base = { width: 1, height: 1 };
     var current = -1;
     var lastFocus = null;
     var pointers = new Map();
@@ -176,39 +175,115 @@
     var lastTap = { time: 0, x: 0, y: 0 };
     var lockY = 0;
     var locked = false;
+    // 缩放模型：fit 是「适配尺寸」基准，zoomCommitted 是已固化的缩放，
+    // view.scale 只是手势期间的临时倍数。
+    // 为什么不干脆用一个 transform:scale：iOS Safari 会把带 transform 的合成
+    // 图层按建立时的分辨率栅格化，之后 scale 只是在拉伸那张旧位图 —— 这就是
+    // 「移动端放大后一直发虚」的根因。所以手势一结束就把缩放写进真实布局宽度，
+    // 强制浏览器按新尺寸重新栅格化，源图有多少像素就用多少像素。
+    var fit = { width: 1, height: 1 };
+    var zoomCommitted = 1;
+
+    function effectiveZoom() {
+      return zoomCommitted * view.scale;
+    }
 
     function apply() {
       var idle = view.scale === 1 && view.tx === 0 && view.ty === 0;
       image.style.transform = idle
         ? ""
         : "translate(" + view.tx + "px, " + view.ty + "px) scale(" + view.scale + ")";
-      lightbox.classList.toggle("is-zoomed", view.scale > 1);
+      lightbox.classList.toggle("is-zoomed", effectiveZoom() > 1.001);
     }
 
     function clampView() {
-      if (view.scale <= 1) {
+      var zoom = effectiveZoom();
+      if (zoom <= 1.001) {
+        // 缩回到适配尺寸：布局宽度也要跟着回到适配值，否则内联宽度与状态不一致
+        zoomCommitted = 1;
         view.scale = 1;
         view.tx = 0;
         view.ty = 0;
+        writeLayoutSize();
         return;
       }
-      var slackX = Math.max(0, (base.width * view.scale - stage.clientWidth) / 2);
-      var slackY = Math.max(0, (base.height * view.scale - stage.clientHeight) / 2);
+      var slackX = Math.max(0, (fit.width * zoom - stage.clientWidth) / 2);
+      var slackY = Math.max(0, (fit.height * zoom - stage.clientHeight) / 2);
       view.tx = Math.min(slackX, Math.max(-slackX, view.tx));
       view.ty = Math.min(slackY, Math.max(-slackY, view.ty));
     }
 
-    function measure() {
-      base.width = image.offsetWidth || 1;
-      base.height = image.offsetHeight || 1;
+    // 量出适配尺寸：临时清掉内联宽度，让 CSS 的 max-width / max-height 生效
+    function remeasureFit() {
+      var savedWidth = image.style.width;
+      var savedMaxWidth = image.style.maxWidth;
+      var savedMaxHeight = image.style.maxHeight;
+      image.style.width = "";
+      image.style.maxWidth = "";
+      image.style.maxHeight = "";
+      fit.width = image.offsetWidth || 1;
+      fit.height = image.offsetHeight || 1;
+      image.style.width = savedWidth;
+      image.style.maxWidth = savedMaxWidth;
+      image.style.maxHeight = savedMaxHeight;
+    }
+
+    function writeLayoutSize() {
+      if (zoomCommitted > 1.001) {
+        image.style.width = Math.round(fit.width * zoomCommitted) + "px";
+        image.style.height = "auto";
+        image.style.maxWidth = "none";
+        image.style.maxHeight = "none";
+      } else {
+        zoomCommitted = 1;
+        image.style.width = "";
+        image.style.height = "";
+        image.style.maxWidth = "";
+        image.style.maxHeight = "";
+      }
+    }
+
+    // 手势结束：把临时倍数固化进布局尺寸
+    function commitZoom() {
+      if (view.scale === 1 && zoomCommitted === 1) return;
+      zoomCommitted = Math.min(MAX_SCALE, Math.max(1, zoomCommitted * view.scale));
+      view.scale = 1;
+      writeLayoutSize();
+      clampView();
+      apply();
+    }
+
+    function clearZoom() {
+      view.scale = 1;
+      view.tx = 0;
+      view.ty = 0;
+      zoomCommitted = 1;
+      image.style.width = "";
+      image.style.height = "";
+      image.style.maxWidth = "";
+      image.style.maxHeight = "";
+      fit.width = image.offsetWidth || 1;
+      fit.height = image.offsetHeight || 1;
+      apply();
     }
 
     function resetView() {
       image.style.transition = "";
-      view.scale = 1;
-      view.tx = 0;
-      view.ty = 0;
-      apply();
+      clearZoom();
+    }
+
+    // 双击还原：先把布局尺寸恢复成适配尺寸（这一步立刻变清晰），
+    // 再用 transform 从原缩放动画回 1，清晰与不突兀兼顾。
+    function animateResetZoom() {
+      var ratio = effectiveZoom();
+      image.style.transition = "";
+      clearZoom();
+      if (ratio > 1.01) {
+        image.style.transform = "scale(" + ratio.toFixed(3) + ")";
+        animate(240, function () {
+          image.style.transform = "";
+        });
+      }
     }
 
     function animate(ms, mutate) {
@@ -227,12 +302,13 @@
       var centerY = box.top + box.height / 2 - view.ty;
       var offsetX = clientX - centerX;
       var offsetY = clientY - centerY;
-      var next = Math.min(MAX_SCALE, Math.max(1, view.scale * factor));
-      if (Math.abs(next - view.scale) < 0.001) return;
-      var k = next / view.scale;
+      var current = effectiveZoom();
+      var next = Math.min(MAX_SCALE, Math.max(1, current * factor));
+      if (Math.abs(next - current) < 0.001) return;
+      var k = next / current;
       view.tx = offsetX - (offsetX - view.tx) * k;
       view.ty = offsetY - (offsetY - view.ty) * k;
-      view.scale = next;
+      view.scale = next / zoomCommitted;
       clampView();
       apply();
     }
@@ -310,7 +386,7 @@
     }
 
     function close() {
-      lightbox.classList.remove("is-open", "is-interacted", "is-zoomed");
+      lightbox.classList.remove("is-open", "is-interacted", "is-zoomed", "is-gesturing");
       image.style.transition = "";
       image.removeAttribute("src");
       image.style.transform = "";
@@ -352,19 +428,21 @@
       animate(220, function () {
         view.tx = 0;
         view.ty = 0;
-        view.scale = view.scale > 1 ? view.scale : 1;
         clampView();
         apply();
       });
     }
 
     function onPointerDown(event) {
-      if (event.target.closest("button")) return;
       lightbox.classList.add("is-interacted");
+      // 只在手势期间提升为合成图层，手势一结束就撤掉（见 commitZoom 的说明）
+      lightbox.classList.add("is-gesturing");
       image.style.transition = "";
       pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
 
       if (pointers.size === 2) {
+        // 双指缩放：用户双指收拢时手指常常落在左右翻页按钮上，
+        // 所以按钮也必须记账，否则这时缩放会整个失效。
         var pair = Array.from(pointers.values());
         pinch = {
           distance: Math.max(1, Math.hypot(pair[0].x - pair[1].x, pair[0].y - pair[1].y)),
@@ -375,6 +453,8 @@
         return;
       }
       if (pointers.size === 1) {
+        // 单指落在按钮上时不进入拖动/翻页，交给 click 正常触发
+        if (event.target.closest("button")) return;
         drag = {
           startX: event.clientX,
           startY: event.clientY,
@@ -416,7 +496,8 @@
         drag.moved = true;
       }
 
-      if (view.scale > 1) {
+      // 已放大（含已固化的缩放）：拖动 = 平移，不要变成翻页手势
+      if (effectiveZoom() > 1.001) {
         view.tx += dx;
         view.ty += dy;
         clampView();
@@ -442,8 +523,16 @@
       pointers.delete(event.pointerId);
       if (pointers.size < 2) pinch = null;
 
-      if (pointers.size > 0 || !drag) {
+      if (pointers.size > 0) {
         drag = null;
+        return;
+      }
+      lightbox.classList.remove("is-gesturing");
+
+      if (!drag) {
+        // 双指缩放结束时 drag 已被清空，这里同样要固化缩放，
+        // 否则双指放大后仍然是拉伸的旧栅格
+        commitZoom();
         return;
       }
 
@@ -453,15 +542,16 @@
       // 先判定「点按」：放大状态下也必须能双击还原，所以不能提前 return
       if (!finished.moved) {
         registerTap(event);
-        if (view.scale > 1) {
+        if (effectiveZoom() > 1.001) {
           clampView();
-          animate(200, apply);
+          apply();
         }
         return;
       }
 
-      if (view.scale > 1) {
-        clampView();
+      if (effectiveZoom() > 1.001) {
+        // 手势结束：把缩放固化到布局尺寸，避免 Safari 拉伸旧栅格
+        commitZoom();
         animate(200, apply);
         return;
       }
@@ -487,27 +577,25 @@
       lastTap = { time: isDouble ? 0 : now, x: event.clientX, y: event.clientY };
       if (!isDouble) return;
 
-      if (view.scale > 1) {
-        animate(240, function () {
-          view.scale = 1;
-          view.tx = 0;
-          view.ty = 0;
-          apply();
-        });
+      if (effectiveZoom() > 1.001) {
+        animateResetZoom();
         return;
       }
-      if (base.width <= 1) measure();
+      if (fit.width <= 1) remeasureFit();
       animate(240, function () {
         zoomAt(event.clientX, event.clientY, 2.6);
       });
+      // 动画结束后固化，双击放大同样保持清晰
+      window.setTimeout(commitZoom, 300);
     }
 
     image.addEventListener("load", function () {
-      measure();
-      if (view.scale > 1) {
-        clampView();
-        apply();
-      }
+      // 换图（含从中档换到高清档）后重算适配尺寸；已放大时布局宽度由
+      // zoomCommitted 决定，宽高比一致所以基准宽度不变，直接重新栅格化即可。
+      remeasureFit();
+      writeLayoutSize();
+      clampView();
+      apply();
     });
 
     triggers.forEach(function (trigger, index) {
@@ -536,6 +624,7 @@
       event.preventDefault();
     });
 
+    var wheelCommitTimer = 0;
     lightbox.addEventListener(
       "wheel",
       function (event) {
@@ -543,9 +632,22 @@
         event.preventDefault();
         lightbox.classList.add("is-interacted");
         zoomAt(event.clientX, event.clientY, event.deltaY < 0 ? 1.16 : 1 / 1.16);
+        // 滚轮停下来之后同样固化，鼠标用户也不会留下被拉伸的旧栅格
+        window.clearTimeout(wheelCommitTimer);
+        wheelCommitTimer = window.setTimeout(commitZoom, 180);
       },
       { passive: false }
     );
+
+    // iOS：阻止 Safari 把整页做双指缩放（那会把已经栅格化好的灯箱图拉伸变虚）
+    lightbox.addEventListener("touchmove", function (event) {
+      if (event.touches.length > 1) event.preventDefault();
+    }, { passive: false });
+    ["gesturestart", "gesturechange", "gestureend"].forEach(function (type) {
+      lightbox.addEventListener(type, function (event) {
+        event.preventDefault();
+      });
+    });
 
     // 鼠标点背景关闭；触摸端靠下滑关闭，避免和双击放大冲突
     lightbox.addEventListener("click", function (event) {
@@ -558,24 +660,19 @@
       if (event.key === "Escape") close();
       else if (event.key === "ArrowRight") settle("next");
       else if (event.key === "ArrowLeft") settle("prev");
-      else if (event.key === "0") {
-        animate(240, function () {
-          view.scale = 1;
-          view.tx = 0;
-          view.ty = 0;
-          apply();
-        });
-      } else if (event.key === "+" || event.key === "=") {
+      else if (event.key === "0") animateResetZoom();
+      else if (event.key === "+" || event.key === "=") {
         zoomAt(window.innerWidth / 2, window.innerHeight / 2, 1.3);
       } else if (event.key === "-") {
         zoomAt(window.innerWidth / 2, window.innerHeight / 2, 1 / 1.3);
       }
     });
 
-    // 横竖屏切换后重新测量，缩放上限才不会算错
+    // 横竖屏切换后重算适配尺寸，缩放比例与边界才不会算错
     window.addEventListener("resize", function () {
       if (!lightbox.classList.contains("is-open")) return;
-      measure();
+      remeasureFit();
+      writeLayoutSize();
       clampView();
       apply();
     });

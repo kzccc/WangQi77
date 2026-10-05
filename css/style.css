@@ -917,11 +917,17 @@ section[id] {
   max-height: 100%;
   object-fit: contain;
   transform-origin: center center;
-  will-change: transform;
+  /* 这里不能长期挂 will-change: transform。
+     iOS Safari 会把合成图层按建立时的分辨率栅格化，之后 transform:scale
+     只是在拉伸那张旧位图，放大后必然发虚。改为手势期间才提升。 */
   box-shadow: 0 30px 80px -20px rgba(0, 0, 0, 0.7);
   -webkit-user-drag: none;
   user-select: none;
   -webkit-user-select: none;
+}
+
+.lightbox.is-gesturing img {
+  will-change: transform;
 }
 
 .lightbox.is-zoomed .lightbox-stage {
